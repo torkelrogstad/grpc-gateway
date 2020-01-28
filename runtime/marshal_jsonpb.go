@@ -167,13 +167,22 @@ func unmarshalJSONPb(data []byte, v interface{}) error {
 	return decodeJSONPb(d, v)
 }
 
+func SetUnmarshaler(unmarshaler Unmarshaler) {
+	internalUnmarshaler = unmarshaler
+}
+
+type Unmarshaler interface {
+	UnmarshalNext(d *json.Decoder, p proto.Message) error
+}
+
+var internalUnmarshaler Unmarshaler = &jsonpb.Unmarshaler{AllowUnknownFields: true}
+
 func decodeJSONPb(d *json.Decoder, v interface{}) error {
 	p, ok := v.(proto.Message)
 	if !ok {
 		return decodeNonProtoField(d, v)
 	}
-	unmarshaler := &jsonpb.Unmarshaler{AllowUnknownFields: allowUnknownFields}
-	return unmarshaler.UnmarshalNext(d, p)
+	return internalUnmarshaler.UnmarshalNext(d, p)
 }
 
 func decodeNonProtoField(d *json.Decoder, v interface{}) error {
@@ -186,8 +195,7 @@ func decodeNonProtoField(d *json.Decoder, v interface{}) error {
 			rv.Set(reflect.New(rv.Type().Elem()))
 		}
 		if rv.Type().ConvertibleTo(typeProtoMessage) {
-			unmarshaler := &jsonpb.Unmarshaler{AllowUnknownFields: allowUnknownFields}
-			return unmarshaler.UnmarshalNext(d, rv.Interface().(proto.Message))
+			return internalUnmarshaler.UnmarshalNext(d, rv.Interface().(proto.Message))
 		}
 		rv = rv.Elem()
 	}
@@ -249,14 +257,12 @@ func (j *JSONPb) Delimiter() []byte {
 	return []byte("\n")
 }
 
-// allowUnknownFields helps not to return an error when the destination
-// is a struct and the input contains object keys which do not match any
-// non-ignored, exported fields in the destination.
-var allowUnknownFields = true
 
 // DisallowUnknownFields enables option in decoder (unmarshaller) to
 // return an error when it finds an unknown field. This function must be
 // called before using the JSON marshaller.
 func DisallowUnknownFields() {
-	allowUnknownFields = false
+	if pbUnmarshaler, ok := internalUnmarshaler.(*jsonpb.Unmarshaler); ok {
+		pbUnmarshaler.AllowUnknownFields = false
+	}
 }
